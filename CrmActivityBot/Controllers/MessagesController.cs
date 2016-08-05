@@ -1,18 +1,26 @@
-﻿using System;
+﻿using CrmActivityBot.Models;
+using CrmActivityBot.Services;
+using Microsoft.Bot.Builder.Dialogs;
+using Microsoft.Bot.Builder.FormFlow;
+using Microsoft.Bot.Connector;
+using System;
+using System.Configuration;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
-using System.Web.Http.Description;
-using Microsoft.Bot.Connector;
-using Newtonsoft.Json;
 
 namespace CrmActivityBot
 {
     [BotAuthentication]
     public class MessagesController : ApiController
     {
+        internal static IDialog<AppointmentReport> MakeRootDialog()
+        {
+            return Chain.From(() => FormDialog.FromForm(AppointmentReport.BuildForm));
+        }
+
         /// <summary>
         /// POST: api/Messages
         /// Receive a message from a user and reply to it
@@ -22,12 +30,22 @@ namespace CrmActivityBot
             if (activity.Type == ActivityTypes.Message)
             {
                 ConnectorClient connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-                // calculate something for us to return
-                int length = (activity.Text ?? string.Empty).Length;
+                var stateClient = activity.GetStateClient(ConfigurationManager.AppSettings["MicrosoftAppId"], ConfigurationManager.AppSettings["MicrosoftAppSecret"]);
+                var userData = await stateClient.BotState.GetUserDataAsync(activity.ChannelId, activity.From.Id);
+                var privateData = await stateClient.BotState.GetPrivateConversationDataAsync(activity.ChannelId, activity.Conversation.Id, activity.From.Id);
 
-                // return our reply to the user
-                Activity reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
-                await connector.Conversations.ReplyToActivityAsync(reply);
+                // CRMにアクセスしてそのユーザーの本日の予定データを取得します。
+                // 本来、この処理は一連のFormFlowの会話が完了する間には一度だけ実行することが望ましい
+                CrmService service = new Services.CrmService();
+                CrmUser user = await service.GetCrmUser(activity.From.Name);
+                CrmService.CallerId = user.Id.ToString();
+                AppointmentReport.CrmUserName = user.FullName;
+                var appointments = await service.GetCRMAppointments();
+
+                if (appointments.Records.Count() != 0)
+                    await Conversation.SendAsync(activity, MakeRootDialog);
+                else
+                    connector.Conversations.SendToConversation(activity.CreateReply("本日の未報告の訪問はありません。"));
             }
             else
             {
