@@ -5,7 +5,7 @@ Dynamics CRM のユーザーのその日の訪問予定を認識し、その内�
 
 ## 動作確認環境
 * Visual Studio 2015 Update 3
-* Bot Framework v3.0
+* Bot Framework V3
 * Dynamics CRM Online 2016
   
   
